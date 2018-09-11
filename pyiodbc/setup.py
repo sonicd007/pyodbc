@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+# The setup file for the pyodbc project.
+#
+# On Windows, this links against the Microsoft Windows driver manager.  On other operating
+# systems it links to unixODBC.  To use iodbc, use the sister pyiodbc project.
+
 import sys, os, re
 from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
 
@@ -11,6 +16,7 @@ except ImportError:
 
 from distutils.extension import Extension
 from distutils.errors import *
+from distutils import filelist
 
 if sys.hexversion >= 0x03000000:
     from configparser import ConfigParser
@@ -64,20 +70,23 @@ class TagsCommand(Command):
 
 
 def main():
-
     version_str, version = get_version()
 
     settings = get_compiler_settings(version_str)
 
-    files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
+    fl = filelist.FileList()
+    fl.findall('../src')
+    fl.include_pattern('*.cpp', anchor=False)
+    fl.sort()
+    files = [abspath(f) for f in fl.files]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
 
     kwargs = {
-        'name': "pyodbc",
+        'name': "pyiodbc",
         'version': version_str,
-        'description': "DB API Module for ODBC",
+        'description': "iODBC DB API Module for ODBC",
 
         'long_description': ('A Python DB API 2 module for ODBC. This project provides an up-to-date, '
                             'convenient interface to ODBC using native data types like datetime and decimal.'),
@@ -85,7 +94,7 @@ def main():
         'maintainer':       "Michael Kleehammer",
         'maintainer_email': "michael@kleehammer.com",
 
-        'ext_modules': [Extension('pyodbc', files, **settings)],
+        'ext_modules': [Extension('pyiodbc', files, **settings)],
 
         'license': 'MIT',
 
@@ -102,6 +111,7 @@ def main():
                        'Programming Language :: Python :: 3.4',
                        'Programming Language :: Python :: 3.5',
                        'Programming Language :: Python :: 3.6',
+                       'Programming Language :: Python :: 3.7',
                        'Topic :: Database',
                        ],
 
@@ -128,6 +138,9 @@ def get_compiler_settings(version_str):
         'define_macros' : [ ('PYODBC_VERSION', version_str) ]
     }
 
+    settings['define_macros'].append(('PYODBC_PROJECT', 'pyiodbc'))
+    settings['define_macros'].append(('PYODBC_PROJECT_PYIODBC', 1))
+
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
     # command.
     for option in ['assert', 'trace', 'leak-check']:
@@ -137,35 +150,10 @@ def get_compiler_settings(version_str):
         except ValueError:
             pass
 
-    if os.name == 'nt':
-        settings['extra_compile_args'].extend([
-            '/Wall',
-            '/wd4514',          # unreference inline function removed
-            '/wd4820',          # padding after struct member
-            '/wd4668',          # is not defined as a preprocessor macro
-            '/wd4711', # function selected for automatic inline expansion
-            '/wd4100', # unreferenced formal parameter
-            '/wd4127', # "conditional expression is constant" testing compilation constants
-            '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
-        ])
+    if os.name == 'nt' or os.environ.get("OS", '').lower().startswith('windows'):
+        sys.exit('iODBC not supported on Windows.  Use pyodbc project not pyiodbc')
 
-        if '--debug' in sys.argv:
-            sys.argv.remove('--debug')
-            settings['extra_compile_args'].extend('/Od /Ge /GS /GZ /RTC1 /Wp64 /Yd'.split())
-
-        settings['libraries'].append('odbc32')
-        settings['libraries'].append('advapi32')
-
-    elif os.environ.get("OS", '').lower().startswith('windows'):
-        # Windows Cygwin (posix on windows)
-        # OS name not windows, but still on Windows
-        settings['libraries'].append('odbc32')
-
-    elif sys.platform == 'darwin':
-        # The latest versions of OS X no longer ship with iodbc.  Assume
-        # unixODBC for now.
-        settings['libraries'].append('odbc')
-
+    if sys.platform == 'darwin':
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].extend([
             '-Wno-write-strings',
@@ -177,7 +165,8 @@ def get_compiler_settings(version_str):
         settings['define_macros'].append(('MAC_OS_X_VERSION_10_7',))
 
         # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include', expanduser('~/homebrew/include')]
+        #  dirs = ['/usr/local/include', '/opt/local/include', expanduser('~/homebrew/include')]
+        dirs = ['/usr/include/iodbc']
         settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
 
         # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
@@ -187,7 +176,8 @@ def get_compiler_settings(version_str):
     else:
         # Other posix-like: Linux, Solaris, etc.
 
-        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains
+        # about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
 
         cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
@@ -197,15 +187,10 @@ def get_compiler_settings(version_str):
         if ldflags:
             settings['extra_link_args'].extend(ldflags.split())
 
-        from array import array
-        UNICODE_WIDTH = array('u').itemsize
-#        if UNICODE_WIDTH == 4:
-#            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
-#            # Thanks to Marc-Antoine Parent
-#            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
+    from array import array
+    UNICODE_WIDTH = array('u').itemsize
 
-        # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
-        settings['libraries'].append('odbc')
+    settings['libraries'].append('iodbc')
 
     return settings
 

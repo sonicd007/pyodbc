@@ -1,11 +1,13 @@
 import os, sys, platform
-from os.path import join, dirname, abspath, basename
+from os.path import join, dirname, abspath, basename, isdir
 import unittest
 
-def add_to_path():
+def add_to_path(library):
     """
-    Prepends the build directory to the path so that newly built pyodbc libraries are used, allowing it to be tested
-    without installing it.
+    Prepends the build directory to the path so that newly built pyodbc or pyiodbc libraries
+    are used, allowing it to be tested without installing it.
+
+    * library: The library to load: pyodbc or pyiodbc
     """
     # Put the build directory into the Python path so we pick up the version we just built.
     #
@@ -14,13 +16,17 @@ def add_to_path():
     import imp
 
     library_exts  = [ t[0] for t in imp.get_suffixes() if t[-1] == imp.C_EXTENSION ]
-    library_names = [ 'pyodbc%s' % ext for ext in library_exts ]
+    library_names = [ '%s%s' % (library, ext) for ext in library_exts ]
 
     # Only go into directories that match our version number.
 
     dir_suffix = '-%s.%s' % (sys.version_info[0], sys.version_info[1])
 
-    build = join(dirname(dirname(abspath(__file__))), 'build')
+    root = dirname(dirname(abspath(__file__)))
+    build = join(root, library, 'build')
+
+    if not isdir(build):
+        sys.exit('Build dir not found: %s' % build)
 
     for root, dirs, files in os.walk(build):
         for d in dirs[:]:
@@ -32,22 +38,22 @@ def add_to_path():
                 sys.path.insert(0, root)
                 return
 
-    print('Did not find the pyodbc library in the build directory.  Will use an installed version.')
+    print('Did not find the %s library in the build directory (%s).  Will use an installed version.' %
+          (library, build))
 
 
-def print_library_info(cnxn):
-    import pyodbc
+def print_library_info(name, module, cnxn):
     print('python:  %s' % sys.version)
-    print('pyodbc:  %s %s' % (pyodbc.version, os.path.abspath(pyodbc.__file__)))
-    print('odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER))
-    print('driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER)))
-    print('         supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER))
+    print('%s:  %s %s' % (name, module.version, os.path.abspath(module.__file__)))
+    print('odbc:    %s' % cnxn.getinfo(module.SQL_ODBC_VER))
+    print('driver:  %s %s' % (cnxn.getinfo(module.SQL_DRIVER_NAME), cnxn.getinfo(module.SQL_DRIVER_VER)))
+    print('         supports ODBC version %s' % cnxn.getinfo(module.SQL_DRIVER_ODBC_VER))
     print('os:      %s' % platform.system())
-    print('unicode: Py_Unicode=%s SQLWCHAR=%s' % (pyodbc.UNICODE_SIZE, pyodbc.SQLWCHAR_SIZE))
+    print('unicode: Py_Unicode=%s SQLWCHAR=%s' % (module.UNICODE_SIZE, module.SQLWCHAR_SIZE))
 
     cursor = cnxn.cursor()
     for typename in ['VARCHAR', 'WVARCHAR', 'BINARY']:
-        t = getattr(pyodbc, 'SQL_' + typename)
+        t = getattr(module, 'SQL_' + typename)
         cursor.getTypeInfo(t)
         row = cursor.fetchone()
         print('Max %s = %s' % (typename, row and row[2] or '(not supported)'))
@@ -97,7 +103,6 @@ def load_setup_connection_string(section):
         if exists(fqn):
             break
         parent = dirname(path)
-        print('{} --> {}'.format(path, parent))
         if parent == path:
             return None
         path = parent

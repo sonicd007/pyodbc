@@ -43,17 +43,18 @@ class PGTestCase(unittest.TestCase):
     SMALL_BYTES  = bytes(SMALL_STRING, 'utf-8')
     LARGE_BYTES  = bytes(LARGE_STRING, 'utf-8')
 
-    def __init__(self, connection_string, ansi, method_name):
+    def __init__(self, module, cnxnstring, ansi, method_name):
         unittest.TestCase.__init__(self, method_name)
-        self.connection_string = connection_string
+        self.module = module
+        self.cnxnstring = cnxnstring
         self.ansi = ansi
 
     def setUp(self):
-        self.cnxn   = pyodbc.connect(self.connection_string, ansi=self.ansi)
+        self.cnxn   = self.module.connect(self.cnxnstring, ansi=self.ansi)
         self.cursor = self.cnxn.cursor()
 
         # I've set my test database to use UTF-8 which seems most popular.
-        self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
+        self.cnxn.setdecoding(self.module.SQL_WCHAR, encoding='utf-8')
         self.cnxn.setencoding(encoding='utf-8')
 
         # As of psql 9.5.04 SQLGetTypeInfo returns absurdly small sizes leading
@@ -89,11 +90,11 @@ class PGTestCase(unittest.TestCase):
         return _t
 
     def test_drivers(self):
-        p = pyodbc.drivers()
+        p = self.module.drivers()
         self.assertTrue(isinstance(p, list))
 
     def test_datasources(self):
-        p = pyodbc.dataSources()
+        p = self.module.dataSources()
         self.assertTrue(isinstance(p, dict))
 
     # def test_gettypeinfo(self):
@@ -105,19 +106,19 @@ class PGTestCase(unittest.TestCase):
     #             print(' ', col, val)
 
     def test_getinfo_string(self):
-        value = self.cnxn.getinfo(pyodbc.SQL_CATALOG_NAME_SEPARATOR)
+        value = self.cnxn.getinfo(self.module.SQL_CATALOG_NAME_SEPARATOR)
         self.assertTrue(isinstance(value, str))
 
     def test_getinfo_bool(self):
-        value = self.cnxn.getinfo(pyodbc.SQL_ACCESSIBLE_TABLES)
+        value = self.cnxn.getinfo(self.module.SQL_ACCESSIBLE_TABLES)
         self.assertTrue(isinstance(value, bool))
 
     def test_getinfo_int(self):
-        value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
+        value = self.cnxn.getinfo(self.module.SQL_DEFAULT_TXN_ISOLATION)
         self.assertTrue(isinstance(value, int))
 
     def test_getinfo_smallint(self):
-        value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
+        value = self.cnxn.getinfo(self.module.SQL_CONCAT_NULL_BEHAVIOR)
         self.assertTrue(isinstance(value, int))
 
 
@@ -273,7 +274,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(n uuid)")
         self.cursor.execute("insert into t1 values (?)", value)
 
-        pyodbc.native_uuid = False
+        self.module.native_uuid = False
         result = self.cursor.execute("select n from t1").fetchval()
         self.assertEqual(type(result), str)
         self.assertEqual(result, str(value).upper())
@@ -284,7 +285,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(n uuid)")
         self.cursor.execute("insert into t1 values (?)", value)
 
-        pyodbc.native_uuid = True
+        self.module.native_uuid = True
         result = self.cursor.execute("select n from t1").fetchval()
         self.assertIsInstance(result, uuid.UUID)
         self.assertEqual(value, result)
@@ -304,7 +305,7 @@ class PGTestCase(unittest.TestCase):
         # Now that the connection is closed, we expect an exception.  (If the code attempts to use
         # the HSTMT, we'll get an access violation instead.)
         self.sql = "select * from t1"
-        self.assertRaises(pyodbc.ProgrammingError, self._exec)
+        self.assertRaises(self.module.ProgrammingError, self._exec)
 
     def test_empty_string(self):
         self.cursor.execute("create table t1(s varchar(20))")
@@ -334,7 +335,7 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(row[-1], "1")
 
     def test_version(self):
-        self.assertEqual(3, len(pyodbc.version.split('.'))) # 1.3.1 etc.
+        self.assertEqual(3, len(self.module.version.split('.'))) # 1.3.1 etc.
 
     def test_rowcount_delete(self):
         self.assertEqual(self.cursor.rowcount, -1)
@@ -384,7 +385,7 @@ class PGTestCase(unittest.TestCase):
 
         # Has to be set before creating the cursor, so we must recreate self.cursor.
 
-        pyodbc.lowercase = True
+        self.module.lowercase = True
         self.cursor = self.cnxn.cursor()
 
         self.cursor.execute("create table t1(Abc int, dEf int)")
@@ -396,7 +397,7 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(names, [ "abc", "def" ])
 
         # Put it back so other tests don't fail.
-        pyodbc.lowercase = False
+        self.module.lowercase = False
 
     def test_row_description(self):
         """
@@ -466,7 +467,7 @@ class PGTestCase(unittest.TestCase):
                    ('error', 'not an int'),
                    (3, 'good') ]
 
-        self.assertRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
+        self.assertRaises(self.module.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
 
 
     def test_row_slicing(self):
@@ -492,7 +493,7 @@ class PGTestCase(unittest.TestCase):
         """
         self.cursor.execute("create table t1(a int primary key)")
         self.cursor.execute("insert into t1 values (1)")
-        self.assertRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
+        self.assertRaises(self.module.Error, self.cnxn.execute, "insert into t1 values (1)")
 
     def test_row_repr(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)")
@@ -512,7 +513,7 @@ class PGTestCase(unittest.TestCase):
 
     def test_autocommit(self):
         self.assertEqual(self.cnxn.autocommit, False)
-        othercnxn = pyodbc.connect(self.connection_string, autocommit=True)
+        othercnxn = self.module.connect(self.cnxnstring, autocommit=True)
         self.assertEqual(othercnxn.autocommit, True)
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
@@ -522,7 +523,7 @@ class PGTestCase(unittest.TestCase):
         # This is really making sure we are properly encoding and comparing the SQLSTATEs.
         self.cursor.execute("create table t1(s1 varchar(10) primary key)")
         self.cursor.execute("insert into t1 values ('one')")
-        self.assertRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
+        self.assertRaises(self.module.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
 
 
     def test_cnxn_set_attr_before(self):
@@ -530,7 +531,7 @@ class PGTestCase(unittest.TestCase):
         # value to expect.  For now just make sure it doesn't crash.
         # From the unixODBC sqlext.h header file.
         SQL_ATTR_PACKET_SIZE = 112
-        othercnxn = pyodbc.connect(self.connection_string, attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 })
+        othercnxn = self.module.connect(self.cnxnstring, attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 })
 
     def test_cnxn_set_attr(self):
         # I don't have a getattr right now since I don't have a table telling me what kind of
@@ -595,53 +596,52 @@ class PGTestCase(unittest.TestCase):
         
         
 def main():
-    from optparse import OptionParser
-    parser = OptionParser(usage="usage: %prog [options] connection_string")
-    parser.add_option("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_option("-t", "--test", help="Run only the named test")
-    parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    #  parser = OptionParser(usage="usage: %prog [args] connection_string")
+    parser.add_argument("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="Print debugging items")
+    parser.add_argument("-t", "--test", help="Run only the named test")
+    parser.add_argument('-a', '--ansi', help='ANSI only', default=False, action='store_true')
+    parser.add_argument('-l', '--library', default='pyodbc', choices=['pyodbc', 'pyiodbc'],
+                        help='The library to test with: pyodbc (default) or pyiodbc')
+    parser.add_argument('cnxnstring', nargs='?',
+                        help='The connection string (use quotes if contains spaces).  If not provided, uses tmp/setup.cfg')
+    args = parser.parse_args()
 
-    (options, args) = parser.parse_args()
+    # Add the build directory to the path so we're testing the latest build, not the installed version.
+    add_to_path(args.library)
 
-    if len(args) > 1:
-        parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
+    module = __import__(args.library)
 
-    if not args:
-        connection_string = load_setup_connection_string('pgtests')
+    if not args.cnxnstring:
+        args.cnxnstring = load_setup_connection_string('pgtests')
 
-        if not connection_string:
+        if not args.cnxnstring:
             parser.print_help()
             raise SystemExit()
-    else:
-        connection_string = args[0]
 
-    if options.verbose:
-        cnxn = pyodbc.connect(connection_string, ansi=options.ansi)
-        print_library_info(cnxn)
+    if args.verbose:
+        cnxn = module.connect(args.cnxnstring, ansi=args.ansi)
+        print_library_info(args.library, module, cnxn)
         cnxn.close()
 
-    if options.test:
+    if args.test:
         # Run a single test
-        if not options.test.startswith('test_'):
-            options.test = 'test_%s' % (options.test)
+        if not args.test.startswith('test_'):
+            args.test = 'test_%s' % (args.test)
 
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.test) ])
+        s = unittest.TestSuite([ PGTestCase(module, args.cnxnstring, args.ansi, args.test) ])
     else:
         # Run all tests in the class
 
         methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
         methods.sort()
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
+        s = unittest.TestSuite([ PGTestCase(module, args.cnxnstring, args.ansi, m) for m in methods ])
 
-    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
+    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
     testRunner.run(s)
 
+
 if __name__ == '__main__':
-
-    # Add the build directory to the path so we're testing the latest build, not the installed version.
-
-    add_to_path()
-
-    import pyodbc
     main()

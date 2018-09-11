@@ -1184,9 +1184,17 @@ static struct PyModuleDef moduledef = {
 
 PyMODINIT_FUNC
 #if PY_MAJOR_VERSION >= 3
-PyInit_pyodbc()
+  #if PYODBC_PROJECT_PYODBC
+    PyInit_pyodbc()
+  #else
+    PyInit_pyiodbc()
+  #endif
 #else
-initpyodbc(void)
+#if PYODBC_PROJECT_PYODBC
+    initpyodbc(void)
+#else
+    initpyiodbc(void)
+#endif
 #endif
 {
     ErrorInit();
