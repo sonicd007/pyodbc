@@ -638,6 +638,9 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
         return PyDate_FromDate(value.year, value.month, value.day);
     }
 
+    if (value.fraction > 1000000000)
+        value.fraction = 999999999;
+    
     int micros = (int)(value.fraction / 1000); // nanos --> micros
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
